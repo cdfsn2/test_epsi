@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, Any
 
 class SonarQubeError(Exception):
     """Base exception class for SonarQube related errors."""
@@ -225,7 +225,11 @@ class SonarQube:
 
     def _extract_goutsum_value(self, metric: Dict[str, Any]) -> Dict[str, Any]:
         """Extract goutsum value from metric if available."""
-        return {"goutsum": metric.get("value")} if metric.get("key") == "goutsum" else {}
+        if metric.get("key") == "goutsum":
+            return {"goutsum": metric.get("value")}
+        else:
+            # No specific handling needed for other metrics
+            return {}
 
     def _process_metric(self, metric: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single metric and return its data."""
