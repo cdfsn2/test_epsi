@@ -47,25 +47,19 @@ public class MultiFetcher implements DataFetcher<InputStream> {
 
     @Override
     public InputStream loadData(Priority priority) throws Exception {
-
         InputStream inputStream = null;
 
         //Custom/user selected artwork. Loads from a specific source.
         UserSelectedArtwork userSelectedArtwork = ((ShuttleApplication) applicationContext).userSelectedArtwork.get(artworkProvider.getArtworkKey());
         if (userSelectedArtwork != null) {
-            switch (userSelectedArtwork.type) {
-                case ArtworkProvider.Type.MEDIA_STORE:
-                    dataFetcher = new MediaStoreFetcher(applicationContext, artworkProvider);
-                    break;
-                case ArtworkProvider.Type.FOLDER:
-                    dataFetcher = new FolderFetcher(artworkProvider, new File(userSelectedArtwork.path));
-                    break;
-                case ArtworkProvider.Type.TAG:
-                    dataFetcher = new TagFetcher(artworkProvider);
-                    break;
-                case ArtworkProvider.Type.REMOTE:
-                    dataFetcher = new RemoteFetcher(artworkProvider);
-                    break;
+            if (userSelectedArtwork.type == ArtworkProvider.Type.MEDIA_STORE) {
+                dataFetcher = new MediaStoreFetcher(applicationContext, artworkProvider);
+            } else if (userSelectedArtwork.type == ArtworkProvider.Type.FOLDER) {
+                dataFetcher = new FolderFetcher(artworkProvider, new File(userSelectedArtwork.path));
+            } else if (userSelectedArtwork.type == ArtworkProvider.Type.TAG) {
+                dataFetcher = new TagFetcher(artworkProvider);
+            } else if (userSelectedArtwork.type == ArtworkProvider.Type.REMOTE) {
+                dataFetcher = new RemoteFetcher(artworkProvider);
             }
             inputStream = loadData(dataFetcher, priority);
         }

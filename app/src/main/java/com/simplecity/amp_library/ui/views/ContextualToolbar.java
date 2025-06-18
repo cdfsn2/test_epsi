@@ -38,11 +38,8 @@ public class ContextualToolbar extends AestheticToolbar {
     public static ContextualToolbar findContextualToolbar(Fragment fragment) {
         if (fragment instanceof ContextualToolbarHost) {
             return ((ContextualToolbarHost) fragment).getContextualToolbar();
-        } else {
-            Fragment parentFragment = fragment.getParentFragment();
-            if (parentFragment != null) {
-                return findContextualToolbar(parentFragment);
-            }
+        } else if (fragment.getParentFragment() != null) {
+            return findContextualToolbar(fragment.getParentFragment());
         }
         return null;
     }

@@ -11,11 +11,13 @@ import android.net.Uri
 import android.os.PowerManager
 import android.text.TextUtils
 import android.util.Log
+import com.simplecity.amp_library.exceptions.AppExceptions.MediaPlayerException
 import com.simplecity.amp_library.model.Song
 import com.simplecity.amp_library.utils.LogUtils
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import java.io.File
+import java.io.IOException
 
 internal class MediaPlayerPlayback(context: Context) : LocalPlayback(context), MediaPlayer.OnErrorListener, MediaPlayer.OnCompletionListener {
 
@@ -102,73 +104,47 @@ internal class MediaPlayerPlayback(context: Context) : LocalPlayback(context), M
         }
     }
 
-    private fun setDataSourceImpl(mediaPlayer: MediaPlayer, path: String, completion: (Boolean) -> Unit) {
-        synchronized(this) {
-
-            if (TextUtils.isEmpty(path)) {
-                completion(false)
-            }
-            try {
-                mediaPlayer.reset()
-                if (path.startsWith("content://")) {
-                    val uri = Uri.parse(path)
-                    mediaPlayer.setDataSource(context, uri)
-                } else {
-                    mediaPlayer.setDataSource(Uri.fromFile(File(path)).toString())
-                }
-
-                mediaPlayer.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-
-                mediaPlayer.setOnPreparedListener {
-                    mediaPlayer.setOnPreparedListener(null)
-                    completion(true)
-                }
-                mediaPlayer.prepareAsync()
-            } catch (e: Exception) {
-                LogUtils.logException(TAG, "setDataSourceImpl failed. Path: [$path]", e)
-                completion(false)
-            }
-
-            mediaPlayer.setOnCompletionListener(this)
-            mediaPlayer.setOnErrorListener(this)
+    private fun setDataSourceImpl(mediaPlayer: MediaPlayer, path: String, callback: (Boolean) -> Unit) {
+        try {
+            mediaPlayer.setDataSource(path)
+            mediaPlayer.prepareAsync()
+            callback(true)
+        } catch (e: IOException) {
+            LogUtils.logException(TAG, "setDataSourceImpl failed", e)
+            callback(false)
         }
     }
 
     override fun setNextDataSource(path: String?) {
-        synchronized(this) {
-
-            try {
-                currentMediaPlayer?.setNextMediaPlayer(null)
-            } catch (ignored: IllegalArgumentException) {
-                // Nothing to do
-            }
-
+        if (path == null) {
             releaseNextMediaPlayer()
+            return
+        }
 
-            if (TextUtils.isEmpty(path)) {
-                return
+        nextMediaPlayer = MediaPlayer().apply {
+            setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+            setAudioAttributes(audioAttributes)
+            setOnPreparedListener { mp ->
+                mp.start()
+                mp.setOnPreparedListener(null)
             }
+            setOnCompletionListener { mp ->
+                mp.release()
+                nextMediaPlayer = null
+            }
+        }
 
-            nextMediaPlayer = createMediaPlayer(context)
-            nextMediaPlayer!!.audioSessionId = audioSessionId
-
-            setDataSourceImpl(nextMediaPlayer!!, path!!) { success ->
-                if (success) {
-                    try {
-                        currentMediaPlayer?.setNextMediaPlayer(nextMediaPlayer)
-                    } catch (e: Exception) {
-                        LogUtils.logException(TAG, "setNextDataSource failed - failed to call setNextMediaPlayer on currentMediaPlayer", e)
-                        releaseNextMediaPlayer()
-                    }
-                } else {
-                    LogUtils.logException(TAG, "setDataSourceImpl failed for path: [$path]. Setting next media player to null", null)
+        setDataSourceImpl(nextMediaPlayer!!, path) { success ->
+            if (success) {
+                try {
+                    currentMediaPlayer?.setNextMediaPlayer(nextMediaPlayer)
+                } catch (e: Exception) {
+                    LogUtils.logException(TAG, "setNextDataSource failed - failed to call setNextMediaPlayer on currentMediaPlayer", e)
                     releaseNextMediaPlayer()
                 }
+            } else {
+                LogUtils.logException(TAG, "setDataSourceImpl failed for path: [$path]. Setting next media player to null", null)
+                releaseNextMediaPlayer()
             }
         }
     }
@@ -181,15 +157,13 @@ internal class MediaPlayerPlayback(context: Context) : LocalPlayback(context), M
     override fun start() {
         synchronized(this) {
             super.start()
-
             fadeIn()
-
             try {
                 currentMediaPlayer?.start()
             } catch (e: RuntimeException) {
                 LogUtils.logException(TAG, "start() failed", e)
+                throw MediaPlayerException("Failed to start media player", e)
             }
-
             callbacks?.onPlayStateChanged(this)
         }
     }
@@ -202,11 +176,10 @@ internal class MediaPlayerPlayback(context: Context) : LocalPlayback(context), M
                     currentMediaPlayer?.reset()
                 } catch (e: IllegalStateException) {
                     LogUtils.logException(TAG, "stop() failed", e)
+                    throw MediaPlayerException("Failed to stop media player", e)
                 }
-
                 isInitialized = false
             }
-
             callbacks?.onPlayStateChanged(this)
         }
     }

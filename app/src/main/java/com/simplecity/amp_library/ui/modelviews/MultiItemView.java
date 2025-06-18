@@ -18,7 +18,6 @@ public abstract class MultiItemView<VH extends MultiItemView.ViewHolder, T> exte
 
     @Override
     public int getLayoutResId() {
-
         switch (getViewType()) {
             case ViewType.ARTIST_LIST:
             case ViewType.ALBUM_LIST:
@@ -38,8 +37,9 @@ public abstract class MultiItemView<VH extends MultiItemView.ViewHolder, T> exte
             case ViewType.ARTIST_LIST_SMALL:
             case ViewType.ALBUM_LIST_SMALL:
                 return R.layout.list_item_small;
+            default:
+                throw new IllegalStateException("getLayoutResId() invalid ViewType: " + getViewType() + ". Class: " + getClass().getSimpleName());
         }
-        throw new IllegalStateException("getLayoutResId() invalid ViewType. Class: " + getClass().getSimpleName());
     }
 
     public static class ViewHolder<T extends ViewModel> extends BaseViewHolder<T> {

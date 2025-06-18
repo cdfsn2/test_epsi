@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.support.annotation.WorkerThread;
 import android.util.Log;
 import com.simplecity.amp_library.BuildConfig;
+import com.simplecity.amp_library.exceptions.AppExceptions.DatabaseException;
 import com.simplecity.amp_library.model.Query;
 import com.simplecity.amp_library.utils.LogUtils;
 import com.simplecity.amp_library.utils.ThreadUtils;
@@ -45,9 +46,7 @@ public class SqlUtils {
     }
 
     public static <T> List<T> createQuery(Context context, Function<Cursor, T> mapper, Query query) {
-
         List<T> items = new ArrayList<>();
-
         Cursor cursor = createQuery(context, query);
 
         if (cursor != null) {
@@ -56,7 +55,7 @@ public class SqlUtils {
                     do {
                         T item = mapper.apply(cursor);
                         if (item == null) {
-                            throw new NullPointerException("Mapper returned null for row " + cursor.getPosition());
+                            throw new DatabaseException("Mapper returned null for row " + cursor.getPosition());
                         }
                         items.add(item);
                     } while (cursor.moveToNext());
@@ -71,7 +70,6 @@ public class SqlUtils {
     }
 
     public static void createActionableQuery(Context context, Consumer<Cursor> action, Query query) {
-
         Cursor cursor = createQuery(context, query);
 
         if (cursor != null) {
@@ -94,9 +92,7 @@ public class SqlUtils {
     }
 
     public static <T> T createSingleQuery(Context context, Function<Cursor, T> mapper, T defaultValue, Query query) {
-
         T item = defaultValue;
-
         Cursor cursor = createQuery(context, query);
 
         if (cursor != null) {

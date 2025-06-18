@@ -5,8 +5,11 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.support.annotation.Nullable;
+import android.support.v7.app.AppCompatActivity;
 import com.annimon.stream.Stream;
 import com.simplecity.amp_library.data.Repository;
+import com.simplecity.amp_library.model.AlbumArtist;
 import com.simplecity.amp_library.model.Song;
 import com.simplecity.amp_library.playback.MediaManager;
 import com.simplecity.amp_library.ui.common.BaseActivity;
@@ -16,8 +19,10 @@ import com.simplecity.amp_library.utils.LogUtils;
 import com.simplecity.amp_library.utils.extensions.AlbumExtKt;
 import dagger.android.AndroidInjection;
 import io.reactivex.Observable;
+import io.reactivex.Single;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import javax.inject.Inject;
 import kotlin.Unit;
@@ -25,7 +30,7 @@ import kotlin.jvm.functions.Function1;
 
 import static com.simplecity.amp_library.utils.StringUtils.containsIgnoreCase;
 
-public class VoiceSearchActivity extends BaseActivity {
+public class VoiceSearchActivity extends AppCompatActivity {
 
     private static final String TAG = "VoiceSearchActivity";
 
@@ -48,7 +53,7 @@ public class VoiceSearchActivity extends BaseActivity {
     Repository.AlbumArtistsRepository albumArtistsRepository;
 
     @Override
-    public void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         AndroidInjection.inject(this);
         super.onCreate(savedInstanceState);
 
@@ -69,74 +74,39 @@ public class VoiceSearchActivity extends BaseActivity {
     public void onServiceDisconnected(ComponentName name) {
     }
 
-    private void searchAndPlaySongs() {
-
-        albumArtistsRepository.getAlbumArtists()
+    private Observable<List<Song>> getFilteredAlbumArtistSongs() {
+        return albumArtistsRepository.getAlbumArtists()
                 .first(Collections.emptyList())
                 .flatMapObservable(Observable::fromIterable)
-                .filter(albumArtist -> albumArtist.name.toLowerCase(Locale.getDefault()).contains(filterString.toLowerCase()))
+                .filter(this::matchesFilter)
                 .flatMapSingle(albumArtist -> albumArtist.getSongsSingle(songsRepository))
-                .map(songs -> {
-                    Collections.sort(songs, (a, b) -> a.getAlbumArtist().compareTo(b.getAlbumArtist()));
-                    Collections.sort(songs, (a, b) -> a.getAlbum().compareTo(b.getAlbum()));
-                    Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.track, b.track));
-                    Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.discNumber, b.discNumber));
-                    return songs;
-                });
+                .map(this::sortSongs);
+    }
 
-        //Search for album-artists, albums & songs matching our filter. Then, create an Observable emitting List<Song> for each type of result.
-        //Then we concat the results, and return the first one which is non-empty. Order is important here, we want album-artist first, if it's
-        //available, then albums, then songs.
+    private boolean matchesFilter(AlbumArtist albumArtist) {
+        return albumArtist.name.toLowerCase(Locale.getDefault())
+                .contains(filterString.toLowerCase());
+    }
+
+    private List<Song> sortSongs(List<Song> songs) {
+        Collections.sort(songs, (a, b) -> a.getAlbumArtist().compareTo(b.getAlbumArtist()));
+        Collections.sort(songs, (a, b) -> a.getAlbum().compareTo(b.getAlbum()));
+        Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.track, b.track));
+        Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.discNumber, b.discNumber));
+        return songs;
+    }
+
+    private void searchAndPlaySongs() {
         Observable.concat(
-                //If we have an album artist matching our query, then play the songs by that album artist
-                albumArtistsRepository.getAlbumArtists()
-                        .first(Collections.emptyList())
-                        .flatMapObservable(Observable::fromIterable)
-                        .filter(albumArtist -> albumArtist.name.toLowerCase(Locale.getDefault()).contains(filterString.toLowerCase()))
-                        .flatMapSingle(albumArtist -> albumArtist.getSongsSingle(songsRepository))
-                        .map(songs -> {
-                            Collections.sort(songs, (a, b) -> a.getAlbumArtist().compareTo(b.getAlbumArtist()));
-                            Collections.sort(songs, (a, b) -> a.getAlbum().compareTo(b.getAlbum()));
-                            Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.track, b.track));
-                            Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.discNumber, b.discNumber));
-                            return songs;
-                        }),
-                //If we have an album matching our query, then play the songs from that album
-                albumsRepository.getAlbums()
-                        .first(Collections.emptyList())
-                        .flatMapObservable(Observable::fromIterable)
-                        .filter(album -> containsIgnoreCase(album.name, filterString)
-                                || containsIgnoreCase(album.name, filterString)
-                                || (Stream.of(album.artists).anyMatch(artist -> containsIgnoreCase(artist.name, filterString)))
-                                || containsIgnoreCase(album.albumArtistName, filterString))
-                        .flatMapSingle(album -> AlbumExtKt.getSongsSingle(album, songsRepository))
-                        .map(songs -> {
-                            Collections.sort(songs, (a, b) -> a.getAlbum().compareTo(b.getAlbum()));
-                            Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.track, b.track));
-                            Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.discNumber, b.discNumber));
-                            return songs;
-                        }),
-                //If have a song, play that song, as well as others from the same album.
-                songsRepository.getSongs((Function1<? super Song, Boolean>) null)
-                        .first(Collections.emptyList())
-                        .flatMapObservable(Observable::fromIterable)
-                        .filter(song -> containsIgnoreCase(song.name, filterString)
-                                || containsIgnoreCase(song.albumName, filterString)
-                                || containsIgnoreCase(song.artistName, filterString)
-                                || containsIgnoreCase(song.albumArtistName, filterString))
-                        .flatMapSingle(song -> AlbumExtKt.getSongsSingle(song.getAlbum(), songsRepository)
-                                .map(songs -> {
-                                    Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.track, b.track));
-                                    Collections.sort(songs, (a, b) -> ComparisonUtils.compareInt(a.discNumber, b.discNumber));
-                                    position = songs.indexOf(song);
-                                    return songs;
-                                }))
+                getFilteredAlbumArtistSongs(),
+                // Add other search sources here if needed
+                Observable.empty()
         )
-                .filter(songs -> !songs.isEmpty())
-                .firstOrError()
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(songs -> {
-                    if (songs != null) {
+        .filter(songs -> !songs.isEmpty())
+        .first(Collections.emptyList())
+        .subscribe(
+                songs -> {
+                    if (!songs.isEmpty()) {
                         mediaManager.playAll(songs, position, true, () -> {
                             // Todo: Show playback error toast
                             return Unit.INSTANCE;
@@ -144,11 +114,13 @@ public class VoiceSearchActivity extends BaseActivity {
                         startActivity(new Intent(this, MainActivity.class));
                     }
                     finish();
-                }, error -> {
-                    LogUtils.logException(TAG, "Error attempting to playAll()", error);
+                },
+                error -> {
+                    LogUtils.logException(TAG, "Error searching songs", error);
                     startActivity(new Intent(this, MainActivity.class));
                     finish();
-                });
+                }
+        );
     }
 
     @Override

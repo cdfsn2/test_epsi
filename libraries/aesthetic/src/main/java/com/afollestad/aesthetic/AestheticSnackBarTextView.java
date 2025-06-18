@@ -8,7 +8,7 @@ import android.util.AttributeSet;
 import io.reactivex.disposables.Disposable;
 
 /** @author Aidan Follestad (afollestad) */
-final class AestheticSnackBarTextView extends AppCompatTextView {
+public final class AestheticSnackBarTextView extends AppCompatTextView {
 
   private Disposable subscription;
 

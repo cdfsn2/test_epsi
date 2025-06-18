@@ -39,6 +39,9 @@ public class ColorHelper {
 
     private static ColorHelper sInstance;
 
+    private static final double MIN_CONTRAST_RATIO = 4.5;
+    private static final int COLOR_DEFAULT = 0;
+
     public static ColorHelper getInstance() {
         synchronized (sLock) {
             if (sInstance == null) {
@@ -673,73 +676,63 @@ public class ColorHelper {
     private static final int LIGHTNESS_TEXT_DIFFERENCE_DARK = -10;
 
     public Pair<Integer, Integer> ensureColors(Context context, boolean hasForegroundColor, int backgroundColor, int foregroundColor) {
-        int primaryTextColor;
-        int secondaryTextColor;
         if (!hasForegroundColor) {
-            primaryTextColor = ColorHelper.resolvePrimaryColor(context, backgroundColor);
-            secondaryTextColor = ColorHelper.resolveSecondaryColor(context, backgroundColor);
-            int COLOR_DEFAULT = 0;
-            if (backgroundColor != COLOR_DEFAULT) {
-                primaryTextColor = ColorHelper.findAlphaToMeetContrast(primaryTextColor, backgroundColor, 4.5);
-                secondaryTextColor = ColorHelper.findAlphaToMeetContrast(secondaryTextColor, backgroundColor, 4.5);
-            }
+            return handleNoForegroundColor(context, backgroundColor);
         } else {
-            double backLum = ColorHelper.calculateLuminance(backgroundColor);
-            double textLum = ColorHelper.calculateLuminance(foregroundColor);
-            double contrast = ColorHelper.calculateContrast(foregroundColor,
-                    backgroundColor);
-            // We only respect the given colors if worst case Black or White still has
-            // contrast
-            boolean backgroundLight = backLum > textLum && ColorHelper.satisfiesTextContrast(backgroundColor, Color.BLACK)
-                    || backLum <= textLum && !ColorHelper.satisfiesTextContrast(backgroundColor, Color.WHITE);
-            if (contrast < 4.5f) {
-                if (backgroundLight) {
-                    secondaryTextColor = ColorHelper.findContrastColor(
-                            foregroundColor,
-                            backgroundColor,
-                            true /* findFG */,
-                            4.5f);
-                    primaryTextColor = ColorHelper.changeColorLightness(
-                            secondaryTextColor, -LIGHTNESS_TEXT_DIFFERENCE_LIGHT);
-                } else {
-                    secondaryTextColor =
-                            ColorHelper.findContrastColorAgainstDark(
-                                    foregroundColor,
-                                    backgroundColor,
-                                    true /* findFG */,
-                                    4.5f);
-                    primaryTextColor = ColorHelper.changeColorLightness(
-                            secondaryTextColor, -LIGHTNESS_TEXT_DIFFERENCE_DARK);
-                }
-            } else {
-                primaryTextColor = foregroundColor;
-                secondaryTextColor = ColorHelper.changeColorLightness(
-                        primaryTextColor, backgroundLight ? LIGHTNESS_TEXT_DIFFERENCE_LIGHT
-                                : LIGHTNESS_TEXT_DIFFERENCE_DARK);
-                if (ColorHelper.calculateContrast(secondaryTextColor,
-                        backgroundColor) < 4.5f) {
-                    // oh well the secondary is not good enough
-                    if (backgroundLight) {
-                        secondaryTextColor = ColorHelper.findContrastColor(
-                                secondaryTextColor,
-                                backgroundColor,
-                                true /* findFG */,
-                                4.5f);
-                    } else {
-                        secondaryTextColor
-                                = ColorHelper.findContrastColorAgainstDark(
-                                secondaryTextColor,
-                                backgroundColor,
-                                true /* findFG */,
-                                4.5f);
-                    }
-                    primaryTextColor = ColorHelper.changeColorLightness(
-                            secondaryTextColor, backgroundLight
-                                    ? -LIGHTNESS_TEXT_DIFFERENCE_LIGHT
-                                    : -LIGHTNESS_TEXT_DIFFERENCE_DARK);
-                }
-            }
+            return handleWithForegroundColor(backgroundColor, foregroundColor);
         }
+    }
+
+    private Pair<Integer, Integer> handleNoForegroundColor(Context context, int backgroundColor) {
+        int primaryTextColor = resolvePrimaryColor(context, backgroundColor);
+        int secondaryTextColor = resolveSecondaryColor(context, backgroundColor);
+
+        if (backgroundColor != COLOR_DEFAULT) {
+            primaryTextColor = findAlphaToMeetContrast(primaryTextColor, backgroundColor, MIN_CONTRAST_RATIO);
+            secondaryTextColor = findAlphaToMeetContrast(secondaryTextColor, backgroundColor, MIN_CONTRAST_RATIO);
+        }
+
         return new Pair<>(primaryTextColor, secondaryTextColor);
+    }
+
+    private Pair<Integer, Integer> handleWithForegroundColor(int backgroundColor, int foregroundColor) {
+        double backLum = calculateLuminance(backgroundColor);
+        double textLum = calculateLuminance(foregroundColor);
+        double contrast = calculateContrast(foregroundColor, backgroundColor);
+
+        if (contrast < MIN_CONTRAST_RATIO) {
+            return adjustColorsForLowContrast(backgroundColor, foregroundColor, backLum, textLum);
+        }
+
+        return new Pair<>(foregroundColor, foregroundColor);
+    }
+
+    private Pair<Integer, Integer> adjustColorsForLowContrast(int backgroundColor, int foregroundColor, double backLum, double textLum) {
+        boolean backgroundLight = isBackgroundLight(backLum, textLum, backgroundColor);
+        int secondaryTextColor = findContrastColorForBackground(foregroundColor, backgroundColor, backgroundLight);
+        int primaryTextColor = adjustPrimaryColor(secondaryTextColor, backgroundLight);
+
+        return new Pair<>(primaryTextColor, secondaryTextColor);
+    }
+
+    private boolean isBackgroundLight(double backLum, double textLum, int backgroundColor) {
+        return (backLum > textLum && satisfiesTextContrast(backgroundColor, Color.BLACK)) ||
+               (backLum <= textLum && !satisfiesTextContrast(backgroundColor, Color.WHITE));
+    }
+
+    private int findContrastColorForBackground(int foregroundColor, int backgroundColor, boolean backgroundLight) {
+        if (backgroundLight) {
+            return findContrastColor(foregroundColor, backgroundColor, true, MIN_CONTRAST_RATIO);
+        } else {
+            return findContrastColorAgainstDark(foregroundColor, backgroundColor, true, MIN_CONTRAST_RATIO);
+        }
+    }
+
+    private int adjustPrimaryColor(int secondaryTextColor, boolean backgroundLight) {
+        if (backgroundLight) {
+            return changeColorLightness(secondaryTextColor, -LIGHTNESS_TEXT_DIFFERENCE_LIGHT);
+        } else {
+            return changeColorLightness(secondaryTextColor, -LIGHTNESS_TEXT_DIFFERENCE_DARK);
+        }
     }
 }

@@ -6,7 +6,7 @@ import android.util.AttributeSet;
 import io.reactivex.disposables.Disposable;
 
 /** @author Aidan Follestad (afollestad) */
-final class AestheticSnackBarButton extends AppCompatButton {
+public final class AestheticSnackBarButton extends AppCompatButton {
 
   private Disposable subscription;
 
