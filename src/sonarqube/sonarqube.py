@@ -1,10 +1,19 @@
 from typing import Dict, List, Any
 
+class SonarQubeError(Exception):
+    """Base exception class for SonarQube related errors."""
+    pass
+
 class SonarQube:
     def __init__(self, base_url: str, session: Any) -> None:
         """Initialize SonarQube client with base URL and session."""
         self.base_url = base_url
         self.session = session
+
+    @classmethod
+    def create(cls, base_url: str, session: Any) -> 'SonarQube':
+        """Create a new SonarQube instance."""
+        return cls(base_url, session)
 
     def _get_issue_components(self, issue: Dict[str, Any]) -> Dict[str, Any]:
         """Extract and validate issue components."""
@@ -203,29 +212,32 @@ class SonarQube:
 
         return [self._extract_issue_fields(issue) for issue in issues]
 
+    def _make_api_request(self, endpoint: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """Make an API request to SonarQube."""
+        response = self.session.get(self.base_url + endpoint, params=params)
+        response.raise_for_status()
+        return response.json()
+
     def _fetch_metrics_data(self, project_key: str) -> List[Dict[str, Any]]:
         """Fetch metrics data from SonarQube API."""
-        response = self.session.get(self.base_url + "/api/metrics/search", params={"projectKeys": project_key})
-        response.raise_for_status()
-        data = response.json()
+        data = self._make_api_request("/api/metrics/search", {"projectKeys": project_key})
         return data.get("metrics", [])
+
+    def _extract_goutsum_value(self, metric: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract goutsum value from metric if available."""
+        return {"goutsum": metric.get("value")} if metric.get("key") == "goutsum" else {}
 
     def _process_metric(self, metric: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single metric and return its data."""
-        if metric["key"] == "goutsum":
-            return {"goutsum": metric["value"]}
-        else:
-            # No specific handling needed for other metrics
-            return {}
+        return self._extract_goutsum_value(metric)
 
     def _aggregate_metrics(self, metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Aggregate all metrics into a single dictionary."""
-        result = {}
-        for metric in metrics:
-            result.update(self._process_metric(metric))
-        return result
+        return {k: v for metric in metrics for k, v in self._process_metric(metric).items()}
 
     def get_sonar_metrics(self, project_key: str) -> Dict[str, Any]:
         """Get all metrics for a project."""
-        metrics = self._fetch_metrics_data(project_key)
-        return self._aggregate_metrics(metrics) 
+        try:
+            return self._aggregate_metrics(self._fetch_metrics_data(project_key))
+        except Exception as e:
+            raise SonarQubeError(f"Failed to get SonarQube metrics: {str(e)}") from e 
