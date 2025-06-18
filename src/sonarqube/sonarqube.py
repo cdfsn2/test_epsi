@@ -1,6 +1,11 @@
 from typing import Dict, List, Any
 
 class SonarQube:
+    def __init__(self, base_url: str, session: Any) -> None:
+        """Initialize SonarQube client with base URL and session."""
+        self.base_url = base_url
+        self.session = session
+
     def _get_issue_components(self, issue: Dict[str, Any]) -> Dict[str, Any]:
         """Extract and validate issue components."""
         components = {}
@@ -196,4 +201,31 @@ class SonarQube:
         data = response.json()
         issues = data.get("issues", [])
 
-        return [self._extract_issue_fields(issue) for issue in issues] 
+        return [self._extract_issue_fields(issue) for issue in issues]
+
+    def _fetch_metrics_data(self, project_key: str) -> List[Dict[str, Any]]:
+        """Fetch metrics data from SonarQube API."""
+        response = self.session.get(self.base_url + "/api/metrics/search", params={"projectKeys": project_key})
+        response.raise_for_status()
+        data = response.json()
+        return data.get("metrics", [])
+
+    def _process_metric(self, metric: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a single metric and return its data."""
+        if metric["key"] == "goutsum":
+            return {"goutsum": metric["value"]}
+        else:
+            # No specific handling needed for other metrics
+            return {}
+
+    def _aggregate_metrics(self, metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate all metrics into a single dictionary."""
+        result = {}
+        for metric in metrics:
+            result.update(self._process_metric(metric))
+        return result
+
+    def get_sonar_metrics(self, project_key: str) -> Dict[str, Any]:
+        """Get all metrics for a project."""
+        metrics = self._fetch_metrics_data(project_key)
+        return self._aggregate_metrics(metrics) 
